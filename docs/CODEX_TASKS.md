@@ -19,6 +19,18 @@ The archive plan defines the target architecture. The short-term task file conta
 - Reuse existing Telethon code where reasonable, but refactor shared Telegram client/session logic instead of copying it.
 - Preserve backward compatibility with the existing news-podcast workflow unless a task explicitly authorizes a breaking change.
 
+## Current audited status
+
+Last audited against `main`: **2026-09-16**, after commit `6859265` (`refactor: add shared Telegram client structure`).
+
+- Completed: **ST-00, ST-01, ST-02**
+- Mandatory next gate: **ST-02A — repository credential/session hygiene**
+- Next implementation task after the security gate: **ST-03 — Saved Messages iteration**
+- Saved archive modules currently exist as intentional skeletons; `fetch.py`, `models.py`, `paths.py`, `writer.py`, and `state.py` are not implementations yet.
+- Live Telegram validation has not yet been performed in the recorded Codex environment because runtime dependencies/account access were unavailable there.
+
+This status section should be updated after each meaningful implementation push, but the task checkboxes in `codex_short_term_tasks.md` remain the source of truth.
+
 ## Current priority
 
 The current priority is to build a reliable Saved Messages archive pipeline that:
