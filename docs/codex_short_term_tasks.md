@@ -123,10 +123,56 @@ Completed:
 - Tests / verification performed: offline package imports, configuration validation, and root-script syntax compilation passed without Telethon credentials. A live Telegram connection and `get_me` resolution could not be performed because `telethon` and `pytz` are not installed in the current environment.
 
 Remaining:
+- ST-02A — Remove committed Telegram credentials and add repository secret hygiene.
 - ST-03 — Implement Saved Messages iteration.
 
 Risks / Notes:
 - The current default `SESSION_NAME = 'my_telegram_session'` remains relative to the working directory for backward compatibility; before using a NAS archive, configure an explicit local session path as documented.
+- ST-02 is considered complete because the shared client abstraction is implemented. Credential migration is tracked separately as the mandatory security gate below.
+
+---
+
+### [ ] ST-02A — Remove committed Telegram credentials and add repository secret hygiene
+
+Priority: **P0 / mandatory before live Saved Messages testing**
+
+Goal: prevent Telegram credentials, login sessions, local configuration, and generated archives from being committed to the public repository.
+
+Tasks:
+- Remove hardcoded Telegram API ID/hash values from `main.py`.
+- Load credentials from environment variables or an explicitly local, gitignored configuration file.
+- Keep the existing root entry point usable with minimal migration friction.
+- Add a `.gitignore` covering at minimum:
+  - `.env` and local secret/config variants;
+  - `*.session` and `*.session-journal`;
+  - generated Telegram archive/output directories;
+  - Python cache/build artifacts.
+- Add a safe example configuration such as `.env.example` containing placeholders only.
+- Document the local configuration path and startup requirements.
+- Treat any credential already committed to public Git history as exposed; do not reproduce its value in docs, issues, logs, or future commits.
+- Record that credential rotation/replacement, if required by Telegram account/API management, is an external owner action rather than something the repository can safely automate.
+
+Acceptance criteria:
+- No live Telegram API secret is present in the current tracked source tree.
+- A clean checkout can determine which environment/config values are required from documentation/example files.
+- Telegram session files and generated archives are ignored by Git.
+- Existing channel-fetch behavior remains available after supplying credentials externally.
+- No archive path is used as the default session location.
+
+Verification:
+- Search the tracked working tree for obvious API-secret assignments and session files.
+- Run syntax/import checks without requiring secrets.
+- If a local environment is available, verify configuration loading without printing secret values.
+
+Completed:
+- Not started.
+
+Remaining:
+- This task blocks live ST-03 validation on the public repository workflow.
+
+Risks / Notes:
+- Removing the secret from the current file does not erase it from existing Git history. History rewriting is optional and disruptive; credential invalidation/rotation is the primary protection where supported.
+- Never paste the exposed value into task reports.
 
 ---
 
