@@ -7,14 +7,15 @@ import asyncio
 from getdata import getdata
 
 # --- 配置项 ---
-# 1. 替换为你的 API ID 和 API Hash
-API_ID = 28274300  # 替换成你的 API ID (整数)
-API_HASH = 'e3cdc41cd8786b45efd2ae4dcb9662bb'  # 替换成你的 API Hash (字符串)
+# Telegram API credentials are loaded from the environment at runtime.
+API_ID_ENV_VAR = 'TELEGRAM_API_ID'
+API_HASH_ENV_VAR = 'TELEGRAM_API_HASH'
 
-# 2. 会话文件名/路径 (用于保存登录信息；必须位于 NAS archive 根目录之外)
-# 推荐使用本机配置目录，例如：
-# SESSION_NAME = os.path.expanduser('~/.config/telegram-news-podcast/telegram.session')
-SESSION_NAME = 'my_telegram_session'
+# The default session path is local client state, never the NAS archive.
+DEFAULT_SESSION_PATH = os.path.expanduser(
+    '~/.config/telegram-news-podcast/telegram.session'
+)
+SESSION_NAME = os.environ.get('TELEGRAM_SESSION_PATH', DEFAULT_SESSION_PATH)
 
 # 3. 目标频道信息
 # 可以是频道的用户名 (如 '@channelusername') 或 频道的ID (如 -1001234567890)
@@ -30,11 +31,36 @@ END_TIME_STR = "17:00"    # 结束时间 (HH:MM)
 OUTPUT_DIR = "telegram_archives"
 # --- 配置结束 ---
 
+
+def _required_environment_value(name):
+    value = os.environ.get(name, '').strip()
+    if not value:
+        raise RuntimeError(
+            f"Missing required environment variable: {name}. "
+            "See .env.example and README.md."
+        )
+    return value
+
+
+def load_telegram_credentials():
+    """Load Telegram API credentials without printing their values."""
+
+    api_id_raw = _required_environment_value(API_ID_ENV_VAR)
+    try:
+        api_id = int(api_id_raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{API_ID_ENV_VAR} must be an integer.") from exc
+
+    api_hash = _required_environment_value(API_HASH_ENV_VAR)
+    return api_id, api_hash
+
+
 async def main():
+    api_id, api_hash = load_telegram_credentials()
 
     await getdata(
-        API_ID=API_ID,
-        API_HASH=API_HASH,
+        API_ID=api_id,
+        API_HASH=api_hash,
         SESSION_NAME=SESSION_NAME,
         CHANNEL_IDENTIFIER=CHANNEL_IDENTIFIER,
         INTERVAL_HOURS_STR=INTERVAL_HOURS,

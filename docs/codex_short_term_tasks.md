@@ -132,7 +132,7 @@ Risks / Notes:
 
 ---
 
-### [ ] ST-02A — Remove committed Telegram credentials and add repository secret hygiene
+### [x] ST-02A — Remove committed Telegram credentials and add repository secret hygiene
 
 Priority: **P0 / mandatory before live Saved Messages testing**
 
@@ -165,20 +165,25 @@ Verification:
 - If a local environment is available, verify configuration loading without printing secret values.
 
 Completed:
-- Not started.
+- Removed the hardcoded Telegram API credential values from `main.py`; credentials are now loaded at runtime from `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` without printing their values.
+- Added `.gitignore` rules for `.env` variants, Telegram session files, generated archive/output directories, SQLite/cache artifacts, and Python build caches.
+- Added [.env.example](/Users/elegantwolf/TelegramNewsPodcast/.env.example) with placeholders only and documented local setup, session placement, and startup requirements in [README.md](/Users/elegantwolf/TelegramNewsPodcast/README.md).
+- Changed the default session location to the local `~/.config/telegram-news-podcast/telegram.session` path while retaining `TELEGRAM_SESSION_PATH` override support; existing channel-fetch behavior remains available after external credentials are supplied.
+- Tests / verification performed: tracked-source secret-assignment scan, session-file scan, configuration loading/validation without printing secrets, and Python syntax checks passed.
 
 Remaining:
-- This task blocks live ST-03 validation on the public repository workflow.
+- ST-03 — Implement Saved Messages iteration.
 
 Risks / Notes:
 - Removing the secret from the current file does not erase it from existing Git history. History rewriting is optional and disruptive; credential invalidation/rotation is the primary protection where supported.
 - Never paste the exposed value into task reports.
+- Live Telegram validation remains unavailable until the local runtime dependencies and externally supplied credentials are available.
 
 ---
 
 ## Phase 2 — Saved Messages ingestion
 
-### [ ] ST-03 — Implement Saved Messages iteration
+### [x] ST-03 — Implement Saved Messages iteration
 
 Goal: retrieve Saved Messages as raw Telegram messages.
 
@@ -205,9 +210,22 @@ Acceptance criteria:
 - Message order is deterministic.
 - Empty-text media messages are not skipped.
 
+Completed:
+- Implemented `RawSavedMessage` and asynchronous `fetch_saved_messages()` / `iter_saved_messages()` in `telegram_news_podcast/saved_archive/fetch.py`.
+- Supported full scans with `limit=None` and bounded validation scans with a non-negative `limit`; records are sorted chronologically with Telegram ID as a deterministic tie-breaker.
+- Captured message ID, saved/edit timestamps, grouped ID, reply metadata, text/caption, and serializable raw forward/source metadata without retaining Telethon objects or downloading media.
+- Preserved media-only messages by normalizing missing text to an empty string instead of filtering them out.
+- Tests / verification performed: fake asynchronous Telethon-like client tests for full/limited scans, chronological ordering, empty-text media, album/reply/forward metadata, JSON-ready conversion, package imports, and Python syntax checks.
+
+Remaining:
+- ST-04 — Resolve Saved Messages tags.
+
+Risks / Notes:
+- Live Saved Messages retrieval remains unverified until Telethon is installed and external credentials/account access are available.
+
 ---
 
-### [ ] ST-04 — Resolve Saved Messages tags
+### [x] ST-04 — Resolve Saved Messages tags
 
 Goal: preserve Telegram Saved Messages tags independently from hashtags.
 
@@ -225,9 +243,22 @@ Acceptance criteria:
 Verification:
 - Test at least one tagged and one untagged Saved Message when account data permits.
 
+Completed:
+- Added `SavedMessageTag` / `SavedTagCatalog` and best-effort `fetch_saved_tag_catalog()` in `telegram_news_podcast/saved_archive/tags.py`, using Telegram's Saved Reaction Tags request when the installed Telethon layer exposes it.
+- Added per-message reaction-tag extraction with `reactions_as_tags` handling, stable emoji/custom-emoji identifiers, tag titles/display names, counts, chosen order, and catalog hash support.
+- Attached `saved_tags` to `RawSavedMessage` and its JSON-ready representation; tags remain independent from the future hashtag field.
+- Missing request types, unsupported metadata, unchanged catalogs, and request failures degrade to an empty/previous catalog without aborting message ingestion.
+- Tests / verification performed: fake Telethon-like reaction/catalog tests, tagged/untagged message association, custom emoji identity, variation-selector stability, unsupported-flag handling, catalog fallback behavior, JSON-ready serialization, package imports, and Python syntax checks.
+
+Remaining:
+- ST-05 — Extract textual hashtags.
+
+Risks / Notes:
+- Live account verification of a tagged and untagged message remains pending because Telethon and account credentials are unavailable in the current environment.
+
 ---
 
-### [ ] ST-05 — Extract textual hashtags
+### [x] ST-05 — Extract textual hashtags
 
 Goal: preserve normal `#hashtag` usage in message text.
 
@@ -241,6 +272,18 @@ Acceptance criteria:
 - Hashtag extraction is deterministic.
 - Unicode hashtags are handled reasonably.
 - Duplicate hashtags within one message are deduplicated in metadata while original text remains untouched.
+
+Completed:
+- Added `extract_hashtags()` in `telegram_news_podcast/saved_archive/hashtags.py`; it preserves message text, normalizes Unicode to NFC, accepts Unicode letters/numbers/combining marks/underscores, and returns values without the `#` prefix.
+- Deduplicated hashtags case-insensitively while preserving the first occurrence's spelling; conservative boundaries avoid treating `foo#bar`, `C#`, or `##tag` as ordinary hashtags.
+- Attached extracted hashtags to `RawSavedMessage` and its JSON-ready representation independently from Saved Messages reaction tags.
+- Tests / verification performed: ASCII, Unicode/CJK, combining-mark normalization, case-insensitive duplicates, underscore/numeric hashtags, boundary cases, empty text, package imports, and Python syntax checks.
+
+Remaining:
+- ST-06 — Resolve forwarded/original source metadata.
+
+Risks / Notes:
+- Hashtag extraction is text-based and intentionally does not attempt URL/domain classification; that remains separate downstream work.
 
 ---
 

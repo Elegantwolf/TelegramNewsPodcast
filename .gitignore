@@ -1,0 +1,28 @@
+# Local secrets and Telegram client state
+.env
+.env.*
+!.env.example
+config.local.*
+*.session
+*.session-journal
+*.session-shm
+*.session-wal
+
+# Generated archive/output data
+/telegram_archives/
+/archive/
+/TelegramSaved/
+/telegram_saved_archive/
+/database/*.sqlite
+/metadata/sync-state.json
+/logs/
+/optional/gallery/
+/optional/thumbnails/
+
+# Python caches and local tooling output
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
