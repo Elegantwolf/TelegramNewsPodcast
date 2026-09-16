@@ -4,8 +4,10 @@ from datetime import datetime, time, timedelta
 import pytz # For timezone handling
 from datetime import datetime, time, timedelta
 
-from telethon.sync import TelegramClient
-from telethon.tl.types import InputPeerChannel # For channel access by ID
+from telegram_news_podcast.telegram_client import (
+    TelegramClientConfig,
+    create_telegram_client,
+)
 
 
 async def getdata(API_ID, API_HASH, SESSION_NAME, CHANNEL_IDENTIFIER, INTERVAL_HOURS_STR, END_TIME_STR, OUTPUT_DIR,local_tz=pytz.timezone('Asia/Tokyo')):
@@ -25,7 +27,14 @@ async def getdata(API_ID, API_HASH, SESSION_NAME, CHANNEL_IDENTIFIER, INTERVAL_H
         return
 
 
-    async with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
+    client_config = TelegramClientConfig(
+        api_id=API_ID,
+        api_hash=API_HASH,
+        session_path=SESSION_NAME,
+        timezone=getattr(local_tz, 'zone', 'Asia/Tokyo'),
+    )
+
+    async with create_telegram_client(client_config) as client:
         print("正在连接到 Telegram...")
         if not client.is_connected():
             await client.connect()

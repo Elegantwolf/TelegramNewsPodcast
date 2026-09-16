@@ -11,7 +11,9 @@ from getdata import getdata
 API_ID = 28274300  # 替换成你的 API ID (整数)
 API_HASH = 'e3cdc41cd8786b45efd2ae4dcb9662bb'  # 替换成你的 API Hash (字符串)
 
-# 2. 会话文件名 (用于保存登录信息)
+# 2. 会话文件名/路径 (用于保存登录信息；必须位于 NAS archive 根目录之外)
+# 推荐使用本机配置目录，例如：
+# SESSION_NAME = os.path.expanduser('~/.config/telegram-news-podcast/telegram.session')
 SESSION_NAME = 'my_telegram_session'
 
 # 3. 目标频道信息

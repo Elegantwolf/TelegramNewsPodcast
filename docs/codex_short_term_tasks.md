@@ -8,7 +8,7 @@ The tasks are ordered to minimize rework and keep each step independently testab
 
 ## Phase 0 — Baseline and safety
 
-### [ ] ST-00 — Inspect current project and preserve existing behavior
+### [x] ST-00 — Inspect current project and preserve existing behavior
 
 Goal: establish a safe baseline before refactoring.
 
@@ -27,9 +27,23 @@ Verification:
 - Existing code imports successfully.
 - If runnable credentials are unavailable, perform static validation only and report the limitation.
 
+Completed:
+- Confirmed `main.py` is the current entry point and calls the asynchronous `getdata()` workflow with module-level Telegram, channel, time-window, session, and output-directory settings.
+- Confirmed `getdata.py` authenticates through Telethon, resolves one configured channel, fetches text messages in a local-time window, and writes a dated channel JSON file; media, Saved Messages, tags, and incremental state are not implemented yet.
+- Main files inspected: `main.py`, `getdata.py`, and `README.md`. Existing runtime code was not changed.
+- Compatibility constraints recorded: preserve the current `main.py` entry point and channel-fetch JSON behavior while introducing reusable archive code; keep Telegram session/authentication data outside any future NAS archive root.
+- Tests / verification performed: `python3 -m py_compile main.py getdata.py` passed. Live import/connection validation was not possible because `telethon` and `pytz` are not installed in the current environment.
+
+Remaining:
+- ST-01 — Introduce the project structure for archive code.
+
+Risks / Notes:
+- Telegram API credentials are currently hardcoded in `main.py`; ST-02 should move them to external configuration without breaking the existing entry point.
+- The current Telethon session name is relative to the working directory and must be made explicitly configurable and separate from NAS archive storage.
+
 ---
 
-### [ ] ST-01 — Introduce project structure for archive code
+### [x] ST-01 — Introduce project structure for archive code
 
 Goal: separate Telegram access, archive logic, and existing podcast logic without overengineering.
 
@@ -58,11 +72,23 @@ Acceptance criteria:
 - Archive code has a clear home.
 - No NAS service, web UI, or gallery code is added.
 
+Completed:
+- Added the dependency-free `telegram_news_podcast/` package with a dedicated `saved_archive/` subpackage.
+- Added clear module boundaries for shared Telegram client integration, fetching, normalized models, archive paths, writers, and sync state; implementations remain assigned to their later tasks.
+- Kept the existing root-level `main.py` and `getdata.py` entry points unchanged, with no NAS service, web UI, or gallery code added.
+- Tests / verification performed: offline imports of the new package modules and Python syntax compilation passed without requiring Telethon credentials or a live Telegram account.
+
+Remaining:
+- ST-02 — Refactor reusable Telethon client/session creation.
+
+Risks / Notes:
+- The new package is intentionally a structural seam only; ST-02 must add lazy/runtime Telethon client construction and connect the existing channel workflow without changing its behavior.
+
 ---
 
 ## Phase 1 — Shared Telegram client
 
-### [ ] ST-02 — Refactor reusable Telethon client/session creation
+### [x] ST-02 — Refactor reusable Telethon client/session creation
 
 Goal: stop duplicating Telegram login/session logic.
 
@@ -89,6 +115,18 @@ Acceptance criteria:
 Verification:
 - Import/static tests.
 - If credentials are available, connect and resolve `me` successfully.
+
+Completed:
+- Added `TelegramClientConfig` and `create_telegram_client()` in `telegram_news_podcast/telegram_client.py`, covering API ID, API hash, session path/name, and explicit timezone configuration.
+- Switched `getdata.py` to use the shared client factory while preserving its existing entry point, channel-fetch flow, and session-name compatibility.
+- Kept Telethon as a runtime-only import and documented a recommended local session path outside the NAS archive in `main.py` and the shared client module.
+- Tests / verification performed: offline package imports, configuration validation, and root-script syntax compilation passed without Telethon credentials. A live Telegram connection and `get_me` resolution could not be performed because `telethon` and `pytz` are not installed in the current environment.
+
+Remaining:
+- ST-03 — Implement Saved Messages iteration.
+
+Risks / Notes:
+- The current default `SESSION_NAME = 'my_telegram_session'` remains relative to the working directory for backward compatibility; before using a NAS archive, configure an explicit local session path as documented.
 
 ---
 
