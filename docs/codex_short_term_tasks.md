@@ -6,40 +6,42 @@ The tasks are ordered to minimize rework and keep each step independently testab
 
 ---
 
+## Validation strategy
+
+Real Telegram validation is intentionally staged instead of being postponed until ST-20.
+
+Validation levels:
+
+1. **Level 1 — Login smoke test**
+   - Establish a real user-session connection.
+   - Resolve `get_me()`.
+   - Do not fetch/archive content yet.
+
+2. **Level 2 — Metadata smoke test**
+   - Fetch a small bounded sample (target: 20–50 Saved Messages).
+   - Verify Saved tags, hashtags, source metadata, timestamps, albums/media-only messages, and hidden/private forward edge cases.
+   - Do not download media.
+
+3. **Level 3 — Archive/media smoke tests**
+   - First write Markdown/JSONL to a temporary local archive.
+   - Then download a small media sample.
+   - Only after successful local validation should a NAS/SMB path be used as the production archive root.
+
+The real account is used only as a read-only validation source until media-download tasks explicitly begin.
+
+---
+
 ## Phase 0 — Baseline and safety
 
 ### [x] ST-00 — Inspect current project and preserve existing behavior
 
 Goal: establish a safe baseline before refactoring.
 
-Tasks:
-- Inspect `main.py`, `getdata.py`, and current project assumptions.
-- Record how the existing news-fetch workflow is invoked.
-- Identify Telethon session handling, configuration inputs, output paths, and dependencies.
-- Avoid changing existing runtime behavior in this task.
-
-Acceptance criteria:
-- Existing entry points are understood.
-- Any duplicated imports / obvious cleanup opportunities may be noted, but not mixed into unrelated refactoring.
-- A short note is added documenting current behavior and compatibility constraints.
-
-Verification:
-- Existing code imports successfully.
-- If runnable credentials are unavailable, perform static validation only and report the limitation.
-
 Completed:
-- Confirmed `main.py` is the current entry point and calls the asynchronous `getdata()` workflow with module-level Telegram, channel, time-window, session, and output-directory settings.
-- Confirmed `getdata.py` authenticates through Telethon, resolves one configured channel, fetches text messages in a local-time window, and writes a dated channel JSON file; media, Saved Messages, tags, and incremental state are not implemented yet.
-- Main files inspected: `main.py`, `getdata.py`, and `README.md`. Existing runtime code was not changed.
-- Compatibility constraints recorded: preserve the current `main.py` entry point and channel-fetch JSON behavior while introducing reusable archive code; keep Telegram session/authentication data outside any future NAS archive root.
-- Tests / verification performed: `python3 -m py_compile main.py getdata.py` passed. Live import/connection validation was not possible because `telethon` and `pytz` are not installed in the current environment.
-
-Remaining:
-- ST-01 — Introduce the project structure for archive code.
-
-Risks / Notes:
-- Telegram API credentials are currently hardcoded in `main.py`; ST-02 should move them to external configuration without breaking the existing entry point.
-- The current Telethon session name is relative to the working directory and must be made explicitly configurable and separate from NAS archive storage.
+- Confirmed `main.py` is the current entry point and calls the asynchronous `getdata()` workflow.
+- Confirmed `getdata.py` authenticates through Telethon, resolves one configured channel, fetches text messages in a local-time window, and writes a dated channel JSON file.
+- Existing runtime behavior was preserved during the baseline audit.
+- Syntax compilation passed in the recorded Codex environment.
 
 ---
 
@@ -47,42 +49,10 @@ Risks / Notes:
 
 Goal: separate Telegram access, archive logic, and existing podcast logic without overengineering.
 
-Suggested structure:
-
-```text
-telegram_news_podcast/
-├── telegram_client.py
-├── saved_archive/
-│   ├── __init__.py
-│   ├── models.py
-│   ├── fetch.py
-│   ├── paths.py
-│   ├── writer.py
-│   └── state.py
-```
-
-Tasks:
-- Create a minimal reusable module layout.
-- Do not move every existing function immediately.
-- Keep current entry points working.
-- Add only dependencies actually required by the archive.
-
-Acceptance criteria:
-- Existing project remains runnable/importable.
-- Archive code has a clear home.
-- No NAS service, web UI, or gallery code is added.
-
 Completed:
-- Added the dependency-free `telegram_news_podcast/` package with a dedicated `saved_archive/` subpackage.
-- Added clear module boundaries for shared Telegram client integration, fetching, normalized models, archive paths, writers, and sync state; implementations remain assigned to their later tasks.
-- Kept the existing root-level `main.py` and `getdata.py` entry points unchanged, with no NAS service, web UI, or gallery code added.
-- Tests / verification performed: offline imports of the new package modules and Python syntax compilation passed without requiring Telethon credentials or a live Telegram account.
-
-Remaining:
-- ST-02 — Refactor reusable Telethon client/session creation.
-
-Risks / Notes:
-- The new package is intentionally a structural seam only; ST-02 must add lazy/runtime Telethon client construction and connect the existing channel workflow without changing its behavior.
+- Added the `telegram_news_podcast/` package and `saved_archive/` subpackage.
+- Added module boundaries for client access, fetching, models, paths, writing, and sync state.
+- Existing root-level entry points remain available.
 
 ---
 
@@ -92,43 +62,10 @@ Risks / Notes:
 
 Goal: stop duplicating Telegram login/session logic.
 
-Tasks:
-- Extract client construction into a reusable helper.
-- Support:
-  - API ID
-  - API hash
-  - session path/name
-  - timezone configuration
-- Keep the session outside the archive root by design.
-- Ensure existing channel-fetch code can reuse the helper.
-
-Security requirement:
-- Never write Telethon `.session` files into the NAS archive directory.
-- Document a recommended local config path such as:
-  `~/.config/telegram-news-podcast/`
-
-Acceptance criteria:
-- Existing channel fetching can use the shared client.
-- Saved Messages code can use the same client.
-- Session location is configurable and clearly separated from archive storage.
-
-Verification:
-- Import/static tests.
-- If credentials are available, connect and resolve `me` successfully.
-
 Completed:
-- Added `TelegramClientConfig` and `create_telegram_client()` in `telegram_news_podcast/telegram_client.py`, covering API ID, API hash, session path/name, and explicit timezone configuration.
-- Switched `getdata.py` to use the shared client factory while preserving its existing entry point, channel-fetch flow, and session-name compatibility.
-- Kept Telethon as a runtime-only import and documented a recommended local session path outside the NAS archive in `main.py` and the shared client module.
-- Tests / verification performed: offline package imports, configuration validation, and root-script syntax compilation passed without Telethon credentials. A live Telegram connection and `get_me` resolution could not be performed because `telethon` and `pytz` are not installed in the current environment.
-
-Remaining:
-- ST-02A — Remove committed Telegram credentials and add repository secret hygiene.
-- ST-03 — Implement Saved Messages iteration.
-
-Risks / Notes:
-- The current default `SESSION_NAME = 'my_telegram_session'` remains relative to the working directory for backward compatibility; before using a NAS archive, configure an explicit local session path as documented.
-- ST-02 is considered complete because the shared client abstraction is implemented. Credential migration is tracked separately as the mandatory security gate below.
+- Added `TelegramClientConfig` and `create_telegram_client()`.
+- Existing channel fetching uses the shared factory.
+- Session location is configurable and documented outside the NAS archive.
 
 ---
 
@@ -136,48 +73,51 @@ Risks / Notes:
 
 Priority: **P0 / mandatory before live Saved Messages testing**
 
-Goal: prevent Telegram credentials, login sessions, local configuration, and generated archives from being committed to the public repository.
-
-Tasks:
-- Remove hardcoded Telegram API ID/hash values from `main.py`.
-- Load credentials from environment variables or an explicitly local, gitignored configuration file.
-- Keep the existing root entry point usable with minimal migration friction.
-- Add a `.gitignore` covering at minimum:
-  - `.env` and local secret/config variants;
-  - `*.session` and `*.session-journal`;
-  - generated Telegram archive/output directories;
-  - Python cache/build artifacts.
-- Add a safe example configuration such as `.env.example` containing placeholders only.
-- Document the local configuration path and startup requirements.
-- Treat any credential already committed to public Git history as exposed; do not reproduce its value in docs, issues, logs, or future commits.
-- Record that credential rotation/replacement, if required by Telegram account/API management, is an external owner action rather than something the repository can safely automate.
-
-Acceptance criteria:
-- No live Telegram API secret is present in the current tracked source tree.
-- A clean checkout can determine which environment/config values are required from documentation/example files.
-- Telegram session files and generated archives are ignored by Git.
-- Existing channel-fetch behavior remains available after supplying credentials externally.
-- No archive path is used as the default session location.
-
-Verification:
-- Search the tracked working tree for obvious API-secret assignments and session files.
-- Run syntax/import checks without requiring secrets.
-- If a local environment is available, verify configuration loading without printing secret values.
-
 Completed:
-- Removed the hardcoded Telegram API credential values from `main.py`; credentials are now loaded at runtime from `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` without printing their values.
-- Added `.gitignore` rules for `.env` variants, Telegram session files, generated archive/output directories, SQLite/cache artifacts, and Python build caches.
-- Added [.env.example](/Users/elegantwolf/TelegramNewsPodcast/.env.example) with placeholders only and documented local setup, session placement, and startup requirements in [README.md](/Users/elegantwolf/TelegramNewsPodcast/README.md).
-- Changed the default session location to the local `~/.config/telegram-news-podcast/telegram.session` path while retaining `TELEGRAM_SESSION_PATH` override support; existing channel-fetch behavior remains available after external credentials are supplied.
-- Tests / verification performed: tracked-source secret-assignment scan, session-file scan, configuration loading/validation without printing secrets, and Python syntax checks passed.
-
-Remaining:
-- ST-03 — Implement Saved Messages iteration.
+- Removed live API credentials from tracked source.
+- Added environment-variable configuration.
+- Added `.env.example`.
+- Added `.gitignore` coverage for secrets, Telegram session files, generated archive/output data, SQLite/cache files, and Python caches.
+- Default session location is local: `~/.config/telegram-news-podcast/telegram.session`.
 
 Risks / Notes:
-- Removing the secret from the current file does not erase it from existing Git history. History rewriting is optional and disruptive; credential invalidation/rotation is the primary protection where supported.
-- Never paste the exposed value into task reports.
-- Live Telegram validation remains unavailable until the local runtime dependencies and externally supplied credentials are available.
+- Credentials previously committed to public Git history should be treated as exposed.
+- Repository changes do not erase old Git history; credential invalidation/rotation is an owner action.
+- Never reproduce exposed values in reports or documentation.
+
+---
+
+### [ ] REAL-00 — Live login smoke test
+
+Type: **Validation gate / Level 1**
+
+Goal: prove that the shared Telegram client can authenticate against the real account before relying exclusively on mocks.
+
+Tasks:
+- Ensure a reproducible local Python environment exists.
+- Record supported Python version.
+- Add a minimal dependency declaration before or as part of this task (for example `requirements.txt` or `pyproject.toml`) containing the runtime dependencies needed for the current code, at minimum Telethon and pytz if still required.
+- Create or expose a minimal login-validation path that:
+  - constructs the shared Telegram client from external configuration;
+  - opens the existing/new local session;
+  - calls `get_me()`;
+  - prints only non-secret account/session status.
+- Do not fetch Saved Messages in this gate.
+- Do not write anything to NAS storage.
+
+Acceptance criteria:
+- A clean local environment can install the declared dependencies.
+- Real Telegram authentication succeeds.
+- `get_me()` resolves the intended account.
+- The session is stored outside the archive root.
+- No credential value is printed or written into tracked files.
+
+Report:
+- Python version
+- Telethon version
+- login success/failure
+- session path (path only, no session contents)
+- any 2FA/login edge case encountered
 
 ---
 
@@ -187,41 +127,15 @@ Risks / Notes:
 
 Goal: retrieve Saved Messages as raw Telegram messages.
 
-Tasks:
-- Iterate Saved Messages using Telethon.
-- Support:
-  - full initial scan;
-  - bounded test scan by limit;
-  - chronological normalization.
-- Capture raw identifiers required for later reconciliation.
-- Do not download media yet.
-
-Required fields:
-- Telegram message ID
-- saved timestamp
-- edit timestamp, if any
-- grouped/media-group ID
-- reply metadata where available
-- raw text/caption
-- raw forward/source metadata required for source resolution
-
-Acceptance criteria:
-- A test run can list Saved Message IDs and timestamps.
-- Message order is deterministic.
-- Empty-text media messages are not skipped.
-
 Completed:
-- Implemented `RawSavedMessage` and asynchronous `fetch_saved_messages()` / `iter_saved_messages()` in `telegram_news_podcast/saved_archive/fetch.py`.
-- Supported full scans with `limit=None` and bounded validation scans with a non-negative `limit`; records are sorted chronologically with Telegram ID as a deterministic tie-breaker.
-- Captured message ID, saved/edit timestamps, grouped ID, reply metadata, text/caption, and serializable raw forward/source metadata without retaining Telethon objects or downloading media.
-- Preserved media-only messages by normalizing missing text to an empty string instead of filtering them out.
-- Tests / verification performed: fake asynchronous Telethon-like client tests for full/limited scans, chronological ordering, empty-text media, album/reply/forward metadata, JSON-ready conversion, package imports, and Python syntax checks.
-
-Remaining:
-- ST-04 — Resolve Saved Messages tags.
+- Implemented `RawSavedMessage`, `fetch_saved_messages()`, and `iter_saved_messages()`.
+- Supports full scans and bounded scans.
+- Preserves media-only messages.
+- Captures message ID, saved/edit timestamps, grouped ID, reply metadata, text/caption, and raw forward/source metadata.
+- Deterministic chronological sorting is implemented.
 
 Risks / Notes:
-- Live Saved Messages retrieval remains unverified until Telethon is installed and external credentials/account access are available.
+- Current full-scan implementation buffers records before sorting; revisit for large archives during incremental-sync work.
 
 ---
 
@@ -229,61 +143,21 @@ Risks / Notes:
 
 Goal: preserve Telegram Saved Messages tags independently from hashtags.
 
-Tasks:
-- Read reaction-tag / Saved Messages tag metadata exposed by Telegram.
-- Resolve tag display names where available.
-- Associate tags with each message.
-- Preserve stable identifiers needed to detect later tag changes.
-
-Acceptance criteria:
-- Tagged and untagged messages can be distinguished.
-- Saved tags are stored separately from message hashtags.
-- Missing or unsupported tag metadata does not abort archiving.
-
-Verification:
-- Test at least one tagged and one untagged Saved Message when account data permits.
-
 Completed:
-- Added `SavedMessageTag` / `SavedTagCatalog` and best-effort `fetch_saved_tag_catalog()` in `telegram_news_podcast/saved_archive/tags.py`, using Telegram's Saved Reaction Tags request when the installed Telethon layer exposes it.
-- Added per-message reaction-tag extraction with `reactions_as_tags` handling, stable emoji/custom-emoji identifiers, tag titles/display names, counts, chosen order, and catalog hash support.
-- Attached `saved_tags` to `RawSavedMessage` and its JSON-ready representation; tags remain independent from the future hashtag field.
-- Missing request types, unsupported metadata, unchanged catalogs, and request failures degrade to an empty/previous catalog without aborting message ingestion.
-- Tests / verification performed: fake Telethon-like reaction/catalog tests, tagged/untagged message association, custom emoji identity, variation-selector stability, unsupported-flag handling, catalog fallback behavior, JSON-ready serialization, package imports, and Python syntax checks.
-
-Remaining:
-- ST-05 — Extract textual hashtags.
-
-Risks / Notes:
-- Live account verification of a tagged and untagged message remains pending because Telethon and account credentials are unavailable in the current environment.
+- Added Saved Message tag/catalog models and best-effort Telegram tag catalog retrieval.
+- Supports emoji/custom-emoji identities, display names/titles, counts, chosen order, and catalog hash.
+- Unsupported/missing metadata degrades gracefully.
 
 ---
 
 ### [x] ST-05 — Extract textual hashtags
 
-Goal: preserve normal `#hashtag` usage in message text.
-
-Tasks:
-- Extract hashtags from text/captions.
-- Keep original text unchanged.
-- Store normalized hashtag values separately.
-- Avoid treating Telegram Saved tags as hashtags.
-
-Acceptance criteria:
-- Hashtag extraction is deterministic.
-- Unicode hashtags are handled reasonably.
-- Duplicate hashtags within one message are deduplicated in metadata while original text remains untouched.
+Goal: preserve ordinary `#hashtag` values separately from Saved tags.
 
 Completed:
-- Added `extract_hashtags()` in `telegram_news_podcast/saved_archive/hashtags.py`; it preserves message text, normalizes Unicode to NFC, accepts Unicode letters/numbers/combining marks/underscores, and returns values without the `#` prefix.
-- Deduplicated hashtags case-insensitively while preserving the first occurrence's spelling; conservative boundaries avoid treating `foo#bar`, `C#`, or `##tag` as ordinary hashtags.
-- Attached extracted hashtags to `RawSavedMessage` and its JSON-ready representation independently from Saved Messages reaction tags.
-- Tests / verification performed: ASCII, Unicode/CJK, combining-mark normalization, case-insensitive duplicates, underscore/numeric hashtags, boundary cases, empty text, package imports, and Python syntax checks.
-
-Remaining:
-- ST-06 — Resolve forwarded/original source metadata.
-
-Risks / Notes:
-- Hashtag extraction is text-based and intentionally does not attempt URL/domain classification; that remains separate downstream work.
+- Added deterministic Unicode-aware hashtag extraction.
+- Original message text remains untouched.
+- Duplicate hashtags are normalized for metadata while preserving first-seen spelling.
 
 ---
 
@@ -313,6 +187,77 @@ Acceptance criteria:
 
 ---
 
+### [ ] REAL-01 — Live Saved Messages metadata smoke test
+
+Type: **Validation gate / Level 2**
+
+Depends on:
+- REAL-00
+- ST-03
+- ST-04
+- ST-05
+- ST-06
+
+Goal: validate the real Telegram metadata model before freezing the normalized archive schema.
+
+Run shape:
+- Use the real Telegram user account.
+- Read only a bounded sample, target **20–50 Saved Messages**.
+- Do **not** download media.
+- Do **not** modify Telegram messages, tags, or reactions.
+- Do **not** write to NAS.
+
+Preferred command shape (exact CLI may be implemented later):
+
+```text
+python -m telegram_news_podcast saved-archive inspect --limit 50
+```
+
+Required validation coverage where available:
+- self-authored Saved Message text
+- forwarded public-channel message
+- tagged Saved Message
+- untagged Saved Message
+- message containing ordinary hashtag(s)
+- photo/media-only message
+- video/document metadata if present
+- album/grouped media
+- edited message
+- private/hidden/unresolved forward source
+
+Required summary:
+- account identifier (non-secret)
+- messages fetched
+- text-only/media message counts
+- tagged vs untagged count
+- unique Saved tags
+- hashtag-bearing message count
+- source counts by type
+- grouped/album count
+- unresolved source count
+- parsing failures/warnings
+
+Spot-check output:
+- Print a small number of representative normalized/raw records.
+- Truncate long message text.
+- Never print secrets/session contents.
+
+Acceptance criteria:
+- Real Saved Messages can be read successfully.
+- Saved tags match Telegram UI for sampled tagged messages.
+- Ordinary hashtags remain separate from Saved tags.
+- Normal forwarded channel names/IDs/message IDs resolve correctly.
+- Self messages are classified correctly.
+- Hidden/private/unresolved sources fail gracefully.
+- Media-only messages are retained.
+- Album/grouped IDs behave as expected.
+- Any mismatch between real Telethon objects and mock assumptions is documented before ST-07/ST-08 proceed.
+
+Decision gate:
+- **Do not freeze the normalized archive schema until REAL-01 passes or known discrepancies are explicitly documented and accepted.**
+
+---
+
 ## Phase 3 — Canonical archive format
 
 ### [ ] ST-07 — Implement archive path and filename rules
@@ -331,8 +276,9 @@ archive/YYYY/MM/DD/
 Tasks:
 - Implement path generation from `saved_at`.
 - Add safe filename sanitization.
-- Keep single-directory media counts bounded naturally by day.
-- Media naming must include Telegram message ID.
+- Bound filename lengths.
+- Handle collisions deterministically.
+- Ensure media filenames include Telegram message ID.
 
 Suggested media filename:
 
@@ -340,42 +286,32 @@ Suggested media filename:
 HHMMSS_<message-id>_<source>_<type>_<index>.<ext>
 ```
 
-Acceptance criteria:
-- Invalid SMB/macOS/Windows filename characters are sanitized.
-- Lengths are bounded.
-- Collisions are handled deterministically.
-- Message ID remains visible in media filenames.
-
 ---
 
 ### [ ] ST-08 — Define normalized archive record model
 
-Goal: have one stable internal representation before writing files.
+Goal: create the stable internal representation used by canonical writers.
 
-Minimum record fields:
+Minimum fields:
 - schema version
 - Telegram message ID
 - saved_at
 - original_at
 - edited_at
 - text
-- saved tags
+- Saved tags
 - hashtags
 - source metadata
 - grouped ID
 - reply metadata
 - media metadata
 - archive-relative paths
-- status fields needed for later reconciliation
+- status/reconciliation fields
 
-Tasks:
-- Implement as dataclass / TypedDict / equivalent.
-- Keep serialization stable.
-- Avoid embedding Telethon objects directly in canonical JSON.
-
-Acceptance criteria:
-- A Telegram message can be normalized without writing to disk.
-- Normalized objects serialize cleanly to JSON.
+Requirements:
+- Plain serializable values only.
+- No Telethon objects in canonical JSON.
+- Incorporate findings from REAL-01 before schema is treated as stable.
 
 ---
 
@@ -383,48 +319,77 @@ Acceptance criteria:
 
 Goal: establish machine-readable canonical metadata.
 
-Tasks:
-- Write one JSON object per logical archive item.
-- Preserve UTF-8 text directly.
-- Make writes crash-safe:
-  - write temporary file;
-  - fsync/close;
-  - atomic replace where practical.
-- Rebuild a day deterministically rather than blindly appending duplicates.
-
-Acceptance criteria:
-- Rerunning the same input does not duplicate entries.
-- JSONL remains valid after rebuild.
-- Records are ordered consistently.
+Requirements:
+- One JSON object per logical archive item.
+- UTF-8.
+- Deterministic ordering.
+- Crash-safe rewrite using temp file + atomic replace where practical.
+- Re-running the same input must not duplicate records.
 
 ---
 
 ### [ ] ST-10 — Write daily Markdown archive
 
-Goal: make the archive readable directly over SMB/Finder.
+Goal: make each day human-readable through SMB/Finder.
 
 Include:
-- saved time
-- original time when available
+- saved/original times
 - Telegram message ID
-- source
-- source username
-- original message ID
+- source title/username/type
+- original message ID/URL where available
 - Saved tags
 - hashtags
 - message text
 - media relative paths
-- original URL when available
+- album grouping
 
-Tasks:
-- Render one daily Markdown file.
-- Group media albums logically.
+Requirements:
 - Preserve messages with no text.
+- Deterministic rendering.
 - Keep formatting simple and portable.
 
+---
+
+### [ ] REAL-02 — Local archive smoke test
+
+Type: **Validation gate / Level 3A**
+
+Depends on:
+- REAL-01
+- ST-07
+- ST-08
+- ST-09
+- ST-10
+
+Goal: validate canonical Markdown/JSONL with real data before using NAS storage.
+
+Run shape:
+- Use a bounded real-account sample (target 20–50 messages).
+- Archive root must be a temporary/local path such as `/tmp/TelegramSavedTest` or a local project test directory excluded by Git.
+- Do not download original media yet unless a later task explicitly enables it.
+- Do not use the production NAS archive root.
+
+Validate:
+- expected `archive/YYYY/MM/DD/` layout
+- daily Markdown readability
+- JSONL validity
+- UTF-8/CJK/emoji rendering
+- chronological ordering
+- Saved tags
+- hashtags
+- source names and original IDs
+- media-only message placeholders/metadata
+- albums/grouped relationships
+- deterministic re-run behavior
+
 Acceptance criteria:
-- Opening the file in a normal text/Markdown viewer is enough to understand the day's Saved Messages.
-- Reruns reproduce the same content deterministically.
+- Human inspection of Markdown is satisfactory.
+- JSONL can be parsed cleanly.
+- Re-running produces equivalent canonical content without duplicate records.
+- No Telegram session/credential file appears inside archive root.
+
+Decision gate:
+- Only after REAL-02 passes may NAS/SMB be used for canonical archive testing.
 
 ---
 
@@ -435,17 +400,13 @@ Acceptance criteria:
 Goal: archive Telegram media in ordinary files.
 
 Tasks:
-- Download photos, videos, documents, audio/voice, stickers, and other supported media.
+- Download photos, videos, documents, audio/voice, stickers, and supported media.
 - Preserve original extension where possible.
 - Preserve original document filename in metadata.
 - Do not transcode.
-- Do not package files into ZIP or proprietary blobs.
-- Track download failures without aborting the entire sync.
-
-Acceptance criteria:
-- Media files are directly openable from SMB/Finder.
-- JSONL/Markdown link to the correct relative paths.
-- Existing verified media is not re-downloaded unnecessarily.
+- Do not package files into proprietary blobs.
+- Track failures without aborting the entire run.
+- Avoid re-downloading already verified media unnecessarily.
 
 ---
 
@@ -455,13 +416,52 @@ Goal: preserve album relationships without creating per-message directories.
 
 Tasks:
 - Detect shared grouped IDs.
-- Keep album media in the day's `media/` folder.
-- Preserve media order.
+- Keep media in the day's `media/` directory.
+- Preserve member order.
 - Render album members together in Markdown.
-- Store grouped ID in JSONL/SQLite.
+- Store grouped ID in canonical metadata and later SQLite.
+
+---
+
+### [ ] REAL-03 — Local media smoke test
+
+Type: **Validation gate / Level 3B**
+
+Depends on:
+- REAL-02
+- ST-11
+- ST-12
+
+Goal: validate a small real-media archive before any full sync or production NAS run.
+
+Run shape:
+- Use a small bounded real-account sample.
+- Download media to a temporary/local archive.
+- Prefer a sample containing:
+  - photo
+  - video
+  - document/PDF
+  - media-only message
+  - album/grouped media
+
+Validate:
+- downloaded files open normally in Finder/standard applications
+- filename sanitization
+- message ID present in filenames
+- original filename preservation for documents
+- correct extension/MIME metadata
+- Markdown/JSONL relative paths
+- album member ordering
+- re-run skips/reuses already verified files as designed
 
 Acceptance criteria:
-- A multi-photo/video Telegram album remains recognizable as one logical group.
+- Sample media is directly human-readable/openable.
+- No transcoding or proprietary packaging is required.
+- Canonical text metadata links to the correct files.
+- Re-run behavior does not create duplicate media unnecessarily.
+
+Decision gate:
+- Only after REAL-03 passes should a full-history media sync or production NAS archive root be attempted.
 
 ---
 
@@ -471,23 +471,20 @@ Acceptance criteria:
 
 Goal: support efficient repeated syncs.
 
-Create a state file such as:
-
+Create:
 `metadata/sync-state.json`
 
 Track enough information for:
-- newest successfully processed message;
-- incomplete media downloads;
-- schema version;
-- last successful sync time;
-- recent reconciliation window marker.
+- newest successfully processed message
+- incomplete media downloads
+- schema version
+- last successful sync time
+- reconciliation marker/window
 
-Do not rely on a single `last_message_id` as the only state.
-
-Acceptance criteria:
-- Re-running after success fetches only necessary new/recent data.
-- Interrupted runs can recover without corrupting the archive.
-- State is updated only after corresponding archive writes succeed.
+Requirements:
+- Do not rely solely on `last_message_id`.
+- State updates occur only after corresponding canonical writes succeed.
+- Interrupted runs recover safely.
 
 ---
 
@@ -496,33 +493,23 @@ Acceptance criteria:
 Goal: detect changes to recent Saved Messages.
 
 Detect where practical:
-- changed Saved tags;
-- edited text;
-- changed source metadata;
-- newly available media;
-- messages deleted from Telegram.
+- changed Saved tags
+- edited text
+- changed source metadata
+- newly available media
+- deleted-from-Telegram status
 
 Policy:
 - Never automatically delete already archived local data.
-- Mark Telegram deletion status in metadata instead.
-
-Acceptance criteria:
-- A tag change can update the canonical day record.
-- Deleted Telegram messages remain locally archived.
+- Mark remote deletion status instead.
 
 ---
 
 ### [ ] ST-15 — Add retry and failure reporting
 
-Goal: make long archival runs reliable.
+Goal: make long archive runs reliable.
 
-Tasks:
-- Retry transient Telegram/media download failures with bounded backoff.
-- Record permanent failures.
-- Continue processing unrelated messages.
-- Produce a concise end-of-run summary.
-
-Required report fields:
+Report:
 - messages scanned
 - messages added
 - messages updated
@@ -532,9 +519,10 @@ Required report fields:
 - unresolved sources
 - days rewritten
 
-Acceptance criteria:
-- One failed media item does not abort a full sync.
-- Failures are visible and actionable.
+Requirements:
+- transient failures use bounded retry/backoff
+- one failed media item does not abort unrelated work
+- permanent failures remain visible/actionable
 
 ---
 
@@ -542,7 +530,7 @@ Acceptance criteria:
 
 ### [ ] ST-16 — Implement rebuildable SQLite index
 
-Goal: make local search fast without making SQLite canonical.
+Goal: fast local querying while keeping ordinary files canonical.
 
 Suggested tables:
 - messages
@@ -554,29 +542,19 @@ Suggested tables:
 - message_hashtags
 - links
 
-Tasks:
-- Build/update the index from normalized archive records.
-- Keep archive-relative paths.
-- Add useful indexes on date/source/tag/media type.
-
 Acceptance criteria:
-- Deleting the SQLite DB and rebuilding from JSONL produces equivalent searchable content.
-- SQLite failure does not invalidate canonical archive files.
+- Database can be deleted and rebuilt from canonical archive data.
+- SQLite failure cannot invalidate the Markdown/JSONL/media archive.
 
 ---
 
 ### [ ] ST-17 — Add SQLite FTS5 text search
 
-Goal: allow fast full-text search.
+Goal: fast full-text search over message text.
 
-Tasks:
-- Create FTS index for message text.
-- Keep FTS rebuildable.
-- Document a few example queries.
-
-Acceptance criteria:
-- Search by keyword returns matching Saved Messages quickly.
-- FTS remains an optional derived index.
+Requirements:
+- FTS index remains rebuildable/derived.
+- Document a few representative queries.
 
 ---
 
@@ -584,11 +562,13 @@ Acceptance criteria:
 
 ### [ ] ST-18 — Add a small archive CLI
 
-Goal: make Codex/users able to run and report tasks consistently.
+Goal: make archive workflows runnable without editing Python source.
 
-Suggested commands:
+Target command family:
 
 ```text
+python -m ... validate-login
+python -m ... saved-archive inspect --limit 50
 python -m ... saved-archive sync
 python -m ... saved-archive sync --limit 100
 python -m ... saved-archive reconcile
@@ -596,23 +576,20 @@ python -m ... saved-archive rebuild-index
 python -m ... saved-archive status
 ```
 
-Tasks:
-- Keep CLI minimal.
+Notes:
+- A minimal temporary command/helper may be implemented earlier to satisfy REAL-00/REAL-01; ST-18 later consolidates the user-facing CLI.
 - Support configurable archive root.
 - Print concise structured summaries.
-
-Acceptance criteria:
-- Core archive workflow does not require editing Python source.
-- Commands are documented.
 
 ---
 
 ### [ ] ST-19 — Add tests for deterministic archive behavior
 
-Minimum test coverage:
+Minimum coverage:
 - filename sanitization
 - source normalization
 - hashtag extraction
+- Saved tag association
 - tagged vs untagged records
 - daily grouping
 - album grouping
@@ -621,42 +598,75 @@ Minimum test coverage:
 - duplicate rerun behavior
 - state update safety
 
-Use fixtures/mocks so most tests do not require a live Telegram account.
-
-Acceptance criteria:
-- Core archive logic can be validated offline.
-- Live-account tests, if any, are optional/manual.
+Principle:
+- Add focused regression tests earlier when a task introduces pure parsing/normalization logic; ST-19 is the point where coverage is completed and organized, not the first time tests are allowed.
 
 ---
 
 ### [ ] ST-20 — End-to-end V1 validation
 
-Goal: prove the V1 workflow before adding convenience features.
+Goal: prove the complete V1 workflow after the staged real-account smoke tests.
 
-Test with a bounded sample containing, where available:
+Test with a bounded sample containing where available:
 - self text
 - forwarded channel text
-- tagged Saved Message
-- untagged Saved Message
+- tagged and untagged messages
 - photo
 - video
 - document
 - album
 - edited message
-- source that cannot be fully resolved
+- unresolved/hidden source
 
 Validate:
-- daily folder layout
-- Markdown readability
-- JSONL validity
-- media paths
+- canonical daily layout
+- Markdown
+- JSONL
+- original media
 - SQLite rebuild
-- incremental rerun behavior
-- no session file inside archive root
+- incremental rerun
+- reconciliation
+- failure reporting
+- no session/credential inside archive root
+- SMB/Finder usability
 
 Completion condition:
-- V1 is considered usable over SMB/Finder.
-- Only then should V1.5 items be considered.
+- V1 is usable as a normal-file NAS archive.
+- Only then should V1.5 gallery/thumbnail conveniences be considered.
+
+---
+
+## Production NAS gate
+
+A production NAS/SMB archive root should not be used for the first validation run.
+
+Promotion sequence:
+
+```text
+REAL-00  real login
+   ↓
+ST-03..06 metadata capabilities
+   ↓
+REAL-01  real metadata smoke test
+   ↓
+ST-07..10 canonical text archive
+   ↓
+REAL-02  local archive smoke test
+   ↓
+ST-11..12 media
+   ↓
+REAL-03  local media smoke test
+   ↓
+ST-13..20 reliability/index/CLI/E2E
+   ↓
+Production NAS full sync
+```
+
+For initial production rollout:
+- Prefer first full canonical sync on local storage if capacity permits.
+- Inspect representative files.
+- Then copy/sync to NAS or explicitly switch archive root to the SMB mount.
+- Never store Telegram login sessions in the NAS archive tree.
 
 ---
 
@@ -664,11 +674,12 @@ Completion condition:
 
 Short-term work is complete when:
 
-1. Saved Messages can be archived incrementally.
-2. Canonical data is ordinary Markdown, JSONL, and original media.
-3. Source/tag/date/media metadata is preserved.
-4. Archive is readable over SMB without a special app.
-5. SQLite can be deleted and rebuilt.
-6. NAS does not need a permanent background service.
-7. Existing TelegramNewsPodcast functionality still works or has a documented migration.
-8. An end-of-run report clearly states what changed and what failed.
+1. Real-account login and staged smoke tests pass.
+2. Saved Messages can be archived incrementally.
+3. Canonical data is ordinary Markdown, JSONL, and original media.
+4. Source/tag/date/media metadata is preserved.
+5. Archive is readable over SMB without a special app.
+6. SQLite can be deleted and rebuilt.
+7. NAS requires no permanent background service.
+8. Existing TelegramNewsPodcast functionality still works or has a documented migration.
+9. End-of-run reports clearly state what changed and what failed.
