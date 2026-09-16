@@ -18,33 +18,82 @@ The archive plan defines the target architecture. The short-term task file conta
 - Do not expand scope into a full media-management application.
 - Reuse existing Telethon code where reasonable, but refactor shared Telegram client/session logic instead of copying it.
 - Preserve backward compatibility with the existing news-podcast workflow unless a task explicitly authorizes a breaking change.
+- Validate against the real Telegram account in small read-only stages instead of waiting until the end of V1.
 
 ## Current audited status
 
-Last audited against `main`: **2026-09-16**, after commit `e6fa6c2` (`feat: add saved message metadata extraction`).
+Last audited against `main`: **2026-09-16**, after commit `8e7be8a` (`docs: update archive task status`).
 
-- Completed: **ST-00, ST-01, ST-02, ST-02A, ST-03, ST-04, ST-05**
-- Next implementation task: **ST-06 — Resolve forwarded/original source metadata**
-- Implemented Saved archive components: `fetch.py`, `tags.py`, and `hashtags.py`.
-- Remaining structural modules `models.py`, `paths.py`, `writer.py`, and `state.py` are intentional skeletons for their assigned tasks.
-- Live Telegram validation has not yet been performed in the recorded Codex environment because runtime dependencies/account access were unavailable there.
+Completed implementation tasks:
+- **ST-00, ST-01, ST-02, ST-02A, ST-03, ST-04, ST-05**
 
-This status section should be updated after each meaningful implementation push, but the task checkboxes in `codex_short_term_tasks.md` remain the source of truth.
+Current implementation target:
+- **ST-06 — Resolve forwarded/original source metadata**
+
+Validation status:
+- **REAL-00 — live login smoke test: pending**
+- **REAL-01 — real Saved Messages metadata smoke test: pending**
+- No real-account validation has yet been recorded in the repository.
+
+Implemented Saved archive components:
+- `fetch.py`
+- `tags.py`
+- `hashtags.py`
+
+Intentional skeletons awaiting later tasks:
+- `models.py`
+- `paths.py`
+- `writer.py`
+- `state.py`
+
+## Real-account validation gates
+
+The project now uses staged real validation:
+
+```text
+REAL-00  Login only
+    ↓
+ST-06    Source resolver
+    ↓
+REAL-01  20–50 message metadata smoke test, read-only
+    ↓
+ST-07..10
+    ↓
+REAL-02  Local Markdown/JSONL archive smoke test
+    ↓
+ST-11..12
+    ↓
+REAL-03  Local media smoke test
+    ↓
+Reliability/index/CLI/E2E
+    ↓
+Production NAS full sync
+```
+
+Rules:
+- REAL-01 does not download media.
+- REAL-02/REAL-03 use local temporary storage first, not the production NAS archive.
+- The NAS/SMB path is promoted to production only after local smoke tests pass.
+- Telegram sessions remain outside the archive root.
+- Real validation should cover Saved tags, hashtags, source metadata, media-only messages, albums, and private/hidden/unresolved forward cases where available.
 
 ## Current priority
 
-The current priority is to build a reliable Saved Messages archive pipeline that:
+1. Complete **REAL-00** if the local environment/account is ready.
+2. Implement **ST-06** source resolution.
+3. Run **REAL-01** against 20–50 real Saved Messages.
+4. Only after metadata assumptions are confirmed, implement ST-07/ST-08 and freeze the canonical schema.
 
-- reads Saved Messages with Telethon;
-- preserves text, tags, hashtags, source metadata, times, albums, and original media;
-- writes a daily SMB-friendly archive;
-- supports safe incremental synchronization;
-- creates a rebuildable SQLite index;
-- can later act as a normalized data source for TelegramNewsPodcast.
+The broader V1 goal remains:
+
+- read Saved Messages with Telethon;
+- preserve text, tags, hashtags, source metadata, times, albums, and original media;
+- write a daily SMB-friendly archive;
+- support safe incremental synchronization;
+- create a rebuildable SQLite index;
+- later expose normalized data to TelegramNewsPodcast.
 
 ## Status convention
-
-Use the following markers in task documents:
 
 - `[ ]` Not started
 - `[~]` In progress
@@ -52,11 +101,9 @@ Use the following markers in task documents:
 - `[!]` Blocked
 - `[-]` Intentionally deferred / not required
 
-When Codex completes a task, update the checkbox and add a short completion note directly below that task.
+When Codex completes a task or validation gate, update the checkbox and add a concise completion note.
 
 ## Completion note format
-
-Use this compact format:
 
 ```text
 Completed:
@@ -66,7 +113,7 @@ Completed:
 - Any migration or compatibility impact
 
 Remaining:
-- Follow-up items, if any
+- Follow-up items
 
 Risks / Notes:
 - Anything the next session must know
@@ -74,11 +121,10 @@ Risks / Notes:
 
 ## Session report format
 
-At the end of each Codex work session, report:
-
 ```text
 Session summary
 - Completed tasks:
+- Completed validation gates:
 - Partially completed tasks:
 - Files changed:
 - Validation performed:
@@ -86,13 +132,12 @@ Session summary
 - Recommended next task:
 ```
 
-Keep reports factual and concise. Do not restate the entire roadmap.
-
 ## Scope guard
 
 Before implementing anything from the long-term roadmap, verify that:
 
-1. all prerequisite short-term tasks are complete;
-2. the feature solves an observed need rather than a hypothetical one;
-3. it does not interfere with NAS HDD sleep without explicit approval;
-4. it remains rebuildable from canonical archive data where possible.
+1. prerequisite short-term tasks are complete;
+2. staged real-account validation has not exposed unresolved schema assumptions;
+3. the feature solves an observed need;
+4. it does not interfere with NAS HDD sleep without explicit approval;
+5. it remains rebuildable from canonical archive data where possible.
